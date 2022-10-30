@@ -2,3 +2,7 @@
 /var/chroot
 /var/schroot
 /var/www/html
+
+/usr/share/selinux/debian
+/datadrive
+/etc/selinux/debian
