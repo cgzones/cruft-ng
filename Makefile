@@ -33,7 +33,7 @@ cruft: $(SHARED_OBJS) $(CRUFT_OBJS) plocate.o dpkg_lib.o
 cpigsold: $(SHARED_OBJS) cpigs.o mlocate.o dpkg_popen.o
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(CPPFLAGS) $(SHARED_OBJS) cpigs.o mlocate.o dpkg_popen.o -lstdc++fs -o cpigsold
 cpigs: $(SHARED_OBJS) cpigs.o plocate.o dpkg_lib.o
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(CPPFLAGS) $(SHARED_OBJS) cpigs.o plocate.o dpkg_lib.o $(LIBDPKG_LIBS) -o cpigs
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) $(CPPFLAGS) $(SHARED_OBJS) cpigs.o plocate.o dpkg_lib.o $(LIBDPKG_LIBS) -ltbb -o cpigs
 
 test_%: %.o test_%.cc dpkg_lib.o usr_merge.o $(LIBDPKG_LIBS)
 test_dpkg_old: dpkg_popen.o test_dpkg.cc usr_merge.o

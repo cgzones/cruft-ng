@@ -7,6 +7,17 @@
 #include <ctime>
 #include <cstring>
 
+#ifdef __has_include
+# if __has_include(<version>)
+#   include <version>
+# endif
+#endif
+
+#if defined __cpp_lib_scoped_lock && defined __cpp_lib_parallel_algorithm
+#include <execution>
+#include <mutex>
+#endif
+
 #include <getopt.h>
 
 #include "explain.h"
@@ -277,7 +288,12 @@ int main(int argc, char *argv[])
 
 	std::map<std::string, size_t> usage{{"UNKNOWN", 0}};
 
-	for (const auto& cruft: cruft_db) {
+#if defined __cpp_lib_scoped_lock && defined __cpp_lib_parallel_algorithm
+	mutex m;
+	for_each(execution::par, cruft_db.cbegin(), cruft_db.cend(), [&](const auto& cruft) {
+#else
+	for_each(cruft_db.cbegin(), cruft_db.cend(), [&](const auto& cruft) {
+#endif
 		string package = "UNKNOWN";
 		for (const auto& owners: globs) {
 			bool match;
@@ -308,13 +324,15 @@ int main(int argc, char *argv[])
 			fsize = 1024;
 		}
 
+#if defined __cpp_lib_scoped_lock && defined __cpp_lib_parallel_algorithm
+		scoped_lock<mutex> lock { m };
+#endif
 		if (csv) {
 			cout << cruft << ';' << package << ';' << type << ";1;" << fsize << endl;
 		} else {
-			if (usage.count(package) == 0) usage[package] = 0;
 			usage[package] += fsize;
 		}
-	}
+	});
 	elapsed("extra vs globs");
 
 	output_pigs(limit, usage);
