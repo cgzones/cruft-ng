@@ -5,9 +5,7 @@
 #include <map>
 #include <algorithm>
 #include <ctime>
-
-#include <string.h>
-#include <time.h>
+#include <cstring>
 
 #include "explain.h"
 #include "filters.h"
@@ -26,18 +24,18 @@ using namespace std::experimental;
 namespace fs = std::experimental::filesystem;
 #endif
 
-clock_t beg = clock();
+static clock_t beg = clock();
 
-void elapsed(string action)
+static void elapsed(const string& action)
 {
-	if (getenv("ELAPSED") == NULL) return;
+	if (getenv("ELAPSED") == nullptr) return;
 	clock_t end = clock();
-	double elapsed_seconds = (end - beg) * 1000 / CLOCKS_PER_SEC;
-	cerr << "elapsed " << action << ": " << elapsed_seconds << endl;
+	clock_t elapsed_mseconds = (end - beg) * 1000 / CLOCKS_PER_SEC;
+	cerr << "elapsed " << action << ": " << elapsed_mseconds << endl;
 	beg = end;
 }
 
-int usage()
+static int usage()
 {
 	cerr << "usage: " << endl;
 	cerr << "  cpigs [-n] [NUMBER]  : default format" << endl;
@@ -60,7 +58,7 @@ static void output_pigs(long unsigned int limit, const map<string, size_t>& usag
 	}
 }
 
-void output_ncdu(vector<string>& cruft_db)
+static void output_ncdu(const vector<string>& cruft_db)
 {
 	// https://dev.yorhel.nl/ncdu/jsonfmt
 	// https://github.com/rofl0r/ncdu/blob/master/src/dir_export.c
@@ -72,10 +70,9 @@ void output_ncdu(vector<string>& cruft_db)
 
 	fs::path last_dir = "/";
 
-	vector<string>::iterator it;
-	for (it=cruft_db.begin(); it != cruft_db.end(); it++)
+	for (const auto& cr: cruft_db)
 	{
-		fs::path cruft = *it;
+		fs::path cruft = cr;
 		fs::path dirname;
 		error_code ec;
 
@@ -171,9 +168,7 @@ int main(int argc, char *argv[])
 	elapsed("dpkg");
 
 	vector<string> cruft_db;
-	vector<string>::iterator left=fs.begin();
-	vector<string>::iterator right=dpkg.begin();
-	while (left != fs.end() )
+	for (auto left = fs.begin(), right = dpkg.begin(); left != fs.end(); )
 	{
 		if (*left==*right) {
 			left++;
@@ -185,14 +180,14 @@ int main(int argc, char *argv[])
 			right++;
 		}
 		if (right == dpkg.end())
-                     while(left !=fs.end()) {cruft_db.push_back(*left); left++;};
+			while(left !=fs.end()) {cruft_db.push_back(*left); left++;}
 	}
 	elapsed("main set match");
 
 	if (ncdu) {
 		output_ncdu(cruft_db);
 		return 0;
-	};
+	}
 
 	vector<owner> globs;
 	read_filters("/etc/cruft/filters/", "/usr/share/cruft/ruleset", packages,globs);
@@ -201,34 +196,30 @@ int main(int argc, char *argv[])
 
 	std::map<std::string, size_t> usage{{"UNKNOWN", 0}};
 
-	vector<string>::iterator cruft=cruft_db.begin();
-	vector<owner>::iterator owners;
-	while (cruft != cruft_db.end()) {
-		owners = globs.begin();
+	for (const auto& cruft: cruft_db) {
 		string package = "UNKNOWN";
-		while (owners != globs.end()) {
+		for (const auto& owners: globs) {
 			bool match;
-			match = myglob(*cruft,(*owners).glob);
+			match = myglob(cruft,owners.glob);
 			if (match) {
-				package = (*owners).package;
-                        	break;
-                	}
-			owners++;
+				package = owners.package;
+				break;
+			}
 		}
 
 		char type;
 		size_t fsize;
 		try
 		{
-			if (fs::is_symlink(*cruft)) {
+			if (fs::is_symlink(cruft)) {
 				type = 'l';
 				fsize = 1024;
-			} else if (fs::is_directory(*cruft)) {
+			} else if (fs::is_directory(cruft)) {
 				type = 'd';
 				fsize = 1024;
 			} else {
 				type = 'f';
-				fsize = fs::file_size(*cruft);
+				fsize = fs::file_size(cruft);
 			}
 		}
 		catch (...) {
@@ -237,13 +228,11 @@ int main(int argc, char *argv[])
 		}
 
 		if (csv) {
-			cout << *cruft << ';' << package << ';' << type << ";1;" << fsize << endl;
+			cout << cruft << ';' << package << ';' << type << ";1;" << fsize << endl;
 		} else {
 			if (usage.count(package) == 0) usage[package] = 0;
 			usage[package] += fsize;
 		}
-
-		cruft++;
 	}
 	elapsed("extra vs globs");
 
