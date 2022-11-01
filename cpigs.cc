@@ -7,6 +7,8 @@
 #include <ctime>
 #include <cstring>
 
+#include <getopt.h>
+
 #include "explain.h"
 #include "filters.h"
 #include "locate.h"
@@ -33,16 +35,6 @@ static void elapsed(const string& action)
 	clock_t elapsed_mseconds = (end - beg) * 1000 / CLOCKS_PER_SEC;
 	cerr << "elapsed " << action << ": " << elapsed_mseconds << endl;
 	beg = end;
-}
-
-static int usage()
-{
-	cerr << "usage: " << endl;
-	cerr << "  cpigs [-n] [NUMBER]  : default format" << endl;
-	cerr << "  cpigs -e             : export in ncdu format" << endl;
-	cerr << "  cpigs -c             : export in .csv format" << endl;
-	cerr << "  cpigs -C             : export in .csv format, also static files" << endl;
-	return 1;
 }
 
 static void output_pigs(long unsigned int limit, const map<string, size_t>& usage)
@@ -134,26 +126,115 @@ static void output_ncdu(const vector<string>& cruft_db)
 	cout << "]" << endl;
 }
 
+static const char* const default_explain_dir = "/etc/cruft/explain/";
+static const char* const default_filter_dir = "/etc/cruft/filters/";
+static const char* const default_ruleset_file = "/usr/share/cruft/ruleset";
+
+static int usage()
+{
+	cerr << "usage:\n";
+	cerr << "  cpigs [-n] [NUMBER]  : default format\n";
+	cerr << "  cpigs -e             : export in ncdu format\n";
+	cerr << "  cpigs -c             : export in .csv format\n";
+	cerr << "  cpigs -C             : export in .csv format, also static files\n";
+
+	cerr << "  cpigs -E --explain     directory for explain scripts (default: " << default_explain_dir << ")\n";
+	cerr << "  cpigs -F --filter      directory for filters (default: " << default_filter_dir << ")\n";
+	cerr << "  cpigs -R --ruleset     path for ruleset file (default: " << default_ruleset_file << ")\n";
+	return 1;
+}
+
 int main(int argc, char *argv[])
 {
-	long unsigned int limit = 10;
-
 	bool ncdu = false, csv = false, static_ = false;
-	if (argc == 2 && !strcmp(argv[1], "-e")) {
-		ncdu = true;
-	} else if (argc == 2 && !strcmp(argv[1], "-c")) {
-		csv = true;
-	} else if (argc == 2 && !strcmp(argv[1], "-C")) {
-		csv = true;
-		static_ = true;
-	} else if (argc == 3) {
-		try {
-			limit = stoi(argv[2]);
-		} catch(...) { return usage(); }
-	} else if (argc == 2) {
-		try {
-			limit = stoi(argv[1]);
-		} catch(...) { return usage(); }
+	long unsigned int limit = 10;
+	string explain_dir = default_explain_dir;
+	string filter_dir = default_filter_dir;
+	string ruleset_file = default_ruleset_file;
+
+	const struct option long_options[] =
+	{
+		{"csv", no_argument, nullptr, 'c'},
+		{"csv_static", no_argument, nullptr, 'C'},
+		{"ncdu", no_argument, nullptr, 'e'},
+		{"explain", required_argument, nullptr, 'E'},
+		{"filter", required_argument, nullptr, 'F'},
+		{"help", no_argument, nullptr, 'h'},
+		{"limit", required_argument, nullptr, 'l'},
+		{"normal", no_argument, nullptr, 'n'},
+		{"ruleset", required_argument, nullptr, 'R'},
+	};
+
+	int opt, opti = 0;
+	while ((opt = getopt_long(argc, argv, "cCeE:F:hlnR:", long_options, &opti)) != 0) {
+		if (opt == EOF)
+			break;
+
+		switch (opt) {
+
+		case 'c':
+			csv = true;
+			break;
+
+		case 'C':
+			csv = true;
+			static_ = true;
+			break;
+
+		case 'e':
+			ncdu = true;
+			break;
+
+		case 'E':
+			explain_dir = optarg;
+			if (!explain_dir.empty() && explain_dir.back() != '/')
+				explain_dir += '/';
+			break;
+
+		case 'F':
+			filter_dir = optarg;
+			if (!filter_dir.empty() && filter_dir.back() != '/')
+				filter_dir += '/';
+			break;
+
+		case 'h':
+			usage();
+			exit(0);
+
+		case 'l':
+			try {
+				limit = stoul(optarg);
+			} catch(...) { 
+				usage();
+				exit(1);
+			}
+			break;
+
+		case 'n':
+			csv = false;
+			static_ = false;
+			break;
+
+		case 'R':
+			ruleset_file = optarg;
+			break;
+
+		case '?':
+			break;
+
+		default:
+			cerr << "Invalid getopt return value: " << opt << "\n";
+			break;
+		}
+	}
+
+	if (optind < argc) {
+		cerr << "Invalid non-option arguments:";
+		while (optind < argc)
+			cerr << " " << argv[optind++];
+		cerr << '\n';
+		usage();
+		exit(1);
 	}
 
 	vector<string> fs;
@@ -190,8 +271,8 @@ int main(int argc, char *argv[])
 	}
 
 	vector<owner> globs;
-	read_filters("/etc/cruft/filters/", "/usr/share/cruft/ruleset", packages,globs);
-	read_explain("/etc/cruft/explain/", packages,globs);
+	read_filters(filter_dir, ruleset_file, packages,globs);
+	read_explain(explain_dir, packages,globs);
 	elapsed("read filters");
 
 	std::map<std::string, size_t> usage{{"UNKNOWN", 0}};
