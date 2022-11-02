@@ -334,7 +334,9 @@ int main(int argc, char *argv[])
 	// match two main data sources
 	vector<string> cruft;
 	vector<string> missing;
-	for (auto left=fs.begin(), right=dpkg.begin(); left != fs.end() && right != dpkg.end();)
+	auto left=fs.cbegin();
+	auto right=dpkg.begin();
+	for (; left != fs.end() && right != dpkg.end();)
 	{
 		//cerr << "[" << *left << "=" << *right << "]" << endl;
 		if (*left==*right) {
@@ -348,7 +350,7 @@ int main(int argc, char *argv[])
 			right++;
 		}
 		if (right == dpkg.end()) while(left  !=fs.end()  ) {cruft.push_back(*left);    left++; }
-		if (left  == fs.end()  ) while(right !=dpkg.end()) {missing.push_back(*right); right++;}
+		if (left  == fs.cend()  ) while(right !=dpkg.end()) {missing.push_back(*right); right++;}
 	}
 	elapsed("main set match");
 
