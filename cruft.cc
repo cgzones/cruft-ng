@@ -7,6 +7,17 @@
 #include <ctime>
 #include <thread>
 
+#ifdef __has_include
+# if __has_include(<version>)
+#   include <version>
+# endif
+#endif
+
+#if defined __cpp_lib_scoped_lock && defined __cpp_lib_parallel_algorithm
+#include <execution>
+#include <mutex>
+#endif
+
 #include <sys/stat.h>
 #include <getopt.h>
 #include <cstring>
@@ -120,6 +131,56 @@ static void one_file(const string& infile)
 	closedir(dp);
 
 	if (not matched) cerr << "no matching package found\n";
+}
+
+static vector<string> filter_cruft(const vector<string>& extras, const vector<owner>& globs, const vector<owner>& explain)
+{
+	vector<string> result;
+
+#if defined __cpp_lib_scoped_lock && defined __cpp_lib_parallel_algorithm
+
+	mutex m;
+	for_each(execution::par, extras.begin(), extras.end(), [&](auto&& extra){
+		bool match = any_of(globs.begin(), globs.end(), [&](auto&& glob) {
+			return myglob(extra, glob.glob);
+		});
+
+		if (!match) {
+			match = any_of(explain.begin(), explain.end(), [&](auto&& expl){
+				return extra == expl.glob;
+			});
+		}
+
+		if (!match) {
+			scoped_lock<mutex> lock { m };
+			result.push_back(extra);
+		}
+	});
+
+	sort(execution::par, result.begin(), result.end());
+
+#else
+
+	for (const auto& extra: extras) {
+		bool match=false;
+		for (const auto& gl: globs) {
+			match=myglob(extra, gl.glob);
+			if (match) break;
+		}
+
+		if (!match) {
+			for (const auto& expl: explain) {
+				match=(extra==expl.glob);
+				if (match) break;
+			}
+		}
+
+		if (!match) result.push_back(extra);
+	}
+
+#endif
+
+	return result;
 }
 
 static clock_t beg = clock();
@@ -321,38 +382,19 @@ int main(int argc, char *argv[])
 	elapsed("missing2");
 	if (debug) cerr << "count stat():" << count_stat << '\n';
 
-	// match the globs against reduced database
 	vector<owner> globs;
-	read_filters(filter_dir, ruleset_file, packages,globs);
+	read_filters(filter_dir, ruleset_file, packages, globs);
 	elapsed("read filters");
-	vector<string> cruft3;
-	for (const auto& cr: cruft) {
-		bool match=false;
-		for (const auto& gl: globs) {
-			match=myglob(cr, gl.glob);
-			if (match) break;
-		}
-		if (!match) cruft3.push_back(cr);
-	}
-	elapsed("extra vs globs");
-	if (debug) cerr << cruft3.size() << " files in cruft3 database\n\n";
-
-	// match the dynamic "explain" filters
+	
 	vector<owner> explain;
 	read_explain(explain_dir, packages, explain);
 	elapsed("read explain");
-	vector<string> cruft4;
-	for (const auto& cr: cruft3) {
-		bool match=false;
-		for (const auto& ex: explain) {
-			match=(cr==ex.glob);
-			if (match) break;
-		}
-		if (!match) cruft4.push_back(cr);
-	}
-	elapsed("extra vs explain");
+	if (debug) cerr << explain.size() << " explian entries\n";
 
-	if (debug) cerr << cruft4.size() << " files in cruft4 database\n";
+	// match the globs against reduced database
+	vector<string> cruft3 = filter_cruft(cruft, globs, explain);
+	elapsed("extra vs globs and explain");
+	if (debug) cerr << cruft3.size() << " files in cruft3 database\n";
 
 	//TODO: some smarter algo when run as non-root
         //      like checking the R/X bits of parent dir
@@ -363,7 +405,7 @@ int main(int argc, char *argv[])
 
 	//TODO: split by filesystem
 	cout << "---- unexplained: / ----\n";
-	for (const auto& cr: cruft4) {
+	for (const auto& cr: cruft3) {
 		cout << "        " << cr;
 		auto bug = bugs.find(cr);
 		if (bug != bugs.end()) {
