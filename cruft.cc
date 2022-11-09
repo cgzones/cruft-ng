@@ -63,7 +63,7 @@ static int read_mounts(const vector<string>& prunefs, vector<string>& mounts)
 
 		if (!match) {
 			//cerr << mount << " => " << type << endl;
-			mounts.emplace_back(mount);
+			mounts.emplace_back(std::move(mount));
 		}
 		getline(mtab,mount); // discard options
 	}
@@ -87,8 +87,8 @@ static bool updatedb()
 	rc_dpkg = stat("/var/lib/dpkg/status", &stat_dpkg);
 
 	if (rc_dpkg) {
-		cerr << "can't read /var/lib/dpkg/status timestamp !!!\n";
-		exit(1);
+		cerr << "Failed to stat /var/lib/dpkg/status: " << strerror(errno) << endl;
+		return false;
 	}
 
 	if (!rc_locate && stat_locate.st_mtim.tv_sec > stat_dpkg.st_mtim.tv_sec)
@@ -97,7 +97,7 @@ static bool updatedb()
 	if (getuid()) return false;
 
 	if (system("updatedb")) {
-		cerr << "updatedb failed\n";
+		cerr << "updatedb failed: " << strerror(errno) << endl;
 		exit(1);
 	}
 	return true;
@@ -109,7 +109,7 @@ static void one_file(const string& infile)
 	DIR *dp;
 	struct dirent *dirp;
 	if((dp = opendir("/usr/lib/cruft/filters-unex/")) == nullptr) {
-		cerr << "Error(" << errno << ") opening /usr/lib/cruft/filters-unex/\n";
+		cerr << "Failed to open directory /usr/lib/cruft/filters-unex/: " << strerror(errno) << endl;
 		exit(1);
 	}
 	bool matched = false;
@@ -190,7 +190,7 @@ static void elapsed(const string& action)
 	if (getenv("ELAPSED") == nullptr) return;
 	clock_t end = clock();
 	clock_t elapsed_mseconds = (end - beg) * 1000 / CLOCKS_PER_SEC;
-	cerr << "elapsed " << action << ": " << elapsed_mseconds << '\n';
+	cerr << "elapsed " << action << ": " << elapsed_mseconds << endl;
 	beg = end;
 }
 
@@ -277,7 +277,7 @@ int main(int argc, char *argv[])
 			exit(1);
 
         default:
-            cerr << "Invalid getopt return value: " << opt << "\n";
+            cerr << "Invalid getopt return value: " << opt << endl;
 			break;
         }
     }
@@ -289,7 +289,7 @@ int main(int argc, char *argv[])
 				one_file(argv[1]);
 				exit(0);
 			} else {
-				cerr << "file not found\n";
+				cerr << "file not found" << endl;
 				exit(1);
 			}
 		}
@@ -297,7 +297,7 @@ int main(int argc, char *argv[])
 		cerr << "Invalid non-option arguments:";
         while (optind < argc)
 			cerr << " " << argv[optind++];
-		cerr << '\n';
+		cerr << endl;
 		print_help_message();
 		exit(1);
     }
@@ -314,7 +314,7 @@ int main(int argc, char *argv[])
 
 	bool updated = updatedb();
 	if (!updated) {
-		cerr << "warning: plocate database is outdated" << endl << flush;
+		cerr << "warning: plocate database is outdated" << endl;
 	}
 	elapsed("updatedb");
 
@@ -336,7 +336,7 @@ int main(int argc, char *argv[])
 	vector<string> missing;
 	auto left=fs.cbegin();
 	auto right=dpkg.begin();
-	for (; left != fs.end() && right != dpkg.end();)
+	for (; left != fs.cend() && right != dpkg.end();)
 	{
 		//cerr << "[" << *left << "=" << *right << "]" << endl;
 		if (*left==*right) {
@@ -349,13 +349,13 @@ int main(int argc, char *argv[])
 			missing.push_back(*right);
 			right++;
 		}
-		if (right == dpkg.end()) while(left  !=fs.end()  ) {cruft.push_back(*left);    left++; }
+		if (right == dpkg.end()) while(left  !=fs.cend()  ) {cruft.push_back(*left);    left++; }
 		if (left  == fs.cend()  ) while(right !=dpkg.end()) {missing.push_back(*right); right++;}
 	}
 	elapsed("main set match");
 
-	if (debug) cerr << missing.size() << " files in missing database\n";
-	if (debug) cerr << cruft.size() << " files in cruft database\n\n";
+	if (debug) cerr << missing.size() << " files in missing database" << endl;
+	if (debug) cerr << cruft.size() << " files in cruft database" << endl << endl;
 
 	// https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=619086
 	vector<string> excludes;
@@ -375,14 +375,14 @@ int main(int argc, char *argv[])
 			struct stat stat_buffer;
 	                if ( stat(miss.c_str(), &stat_buffer) == 0) {
 				count_stat += 1;
-				if (debug) cerr << miss << " was not in plocate database\n";
+				if (debug) cerr << miss << " was not in plocate database" << endl;
 			} else {
 				missing2.push_back(miss);
 			}
 		}
 	}
 	elapsed("missing2");
-	if (debug) cerr << "count stat():" << count_stat << '\n';
+	if (debug) cerr << "count stat():" << count_stat << endl;
 
 	vector<owner> globs;
 	read_filters(filter_dir, ruleset_file, packages, globs);
@@ -391,12 +391,12 @@ int main(int argc, char *argv[])
 	vector<owner> explain;
 	read_explain(explain_dir, packages, explain);
 	elapsed("read explain");
-	if (debug) cerr << explain.size() << " explian entries\n";
+	if (debug) cerr << explain.size() << " explian entries" << endl;
 
 	// match the globs against reduced database
 	vector<string> cruft3 = filter_cruft(cruft, globs, explain);
 	elapsed("extra vs globs and explain");
-	if (debug) cerr << cruft3.size() << " files in cruft3 database\n";
+	if (debug) cerr << cruft3.size() << " files in cruft3 database" << endl;
 
 	//TODO: some smarter algo when run as non-root
         //      like checking the R/X bits of parent dir
